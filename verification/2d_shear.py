@@ -284,4 +284,4 @@ for i in range(num_steps+1):
 
         plotter_func(p_new, dim=1, mesh = domain, title=f"{out_file}/p_mpi_{i}")
         if rank == 0:
-            plot_force_disp(B_bot, "bot_y", out_file)
+            plot_force_disp(B_bot, "bot_x", out_file)
