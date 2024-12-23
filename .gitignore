@@ -1,0 +1,6 @@
+*/results/
+*.o*
+*.po*
+*.h5
+*.xdmf
+__pycache__/
