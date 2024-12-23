@@ -19,7 +19,8 @@ ksp = PETSc.KSP.Type.GMRES
 pc = PETSc.PC.Type.HYPRE
 
 mesh_size = 256
-out_file = f"./results/2d_tension"
+model_type = "amor"
+out_file = f"./results/2d_tension_{model_type}"
 Path(out_file).mkdir(parents=True, exist_ok=True)
 
 print(f"2D tension benchmark test, out_file = {out_file}")
@@ -38,6 +39,8 @@ E = fem.Constant(domain, 210.0e3)
 nu = fem.Constant(domain, 0.3)
 mu = E/(2*(1+nu))
 lmbda = E*nu/((1+nu)*(1-2*nu))
+n = fem.Constant(domain, 2.0)
+Kn = lmbda + 2 * mu / n
 
 V = fem.functionspace(domain, ("Lagrange", 1,))
 W = fem.functionspace(domain, ("Lagrange", 1, (domain.geometry.dim,)))
@@ -137,8 +140,20 @@ def psi_pos_m(u):
 def psi_neg_m(u):
     return 0.5*lmbda*(bracket_neg(ufl.tr(epsilon(u)))**2) + mu*(ufl.inner(epsilon_n, epsilon_n))
 
-def H(u_new, H_old):
-    return ufl.conditional(ufl.gt(psi_pos_m(u_new), H_old), psi_pos_m(u_new), H_old)
+def strain_dev(u):
+    return epsilon(u) - (1/3) * ufl.tr(epsilon(u)) * ufl.Identity(2)
+
+def psi_pos_a(u):
+    return 0.5 * Kn * bracket_pos(ufl.tr(epsilon(u)))**2 + mu * ufl.inner(strain_dev(u), strain_dev(u))
+
+def psi_neg_a(u):
+    return 0.5 * Kn * bracket_neg(ufl.tr(epsilon(u)))**2
+
+def H(u_new, H_old, model_type = "miehe"):
+    if model_type == "miehe":
+        return ufl.conditional(ufl.gt(psi_pos_m(u_new), H_old), psi_pos_m(u_new), H_old)
+    elif model_type == "amor":
+        return ufl.conditional(ufl.gt(psi_pos_a(u_new), H_old), psi_pos_a(u_new), H_old)
 
 def H_init(dist_list, l_0, G_c):
     distances = np.array(dist_list)
