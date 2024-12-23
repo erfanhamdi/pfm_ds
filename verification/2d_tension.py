@@ -37,8 +37,8 @@ G_c_ = fem.Constant(domain, 2.7)
 l_0_ = fem.Constant(domain, 0.015)
 E = fem.Constant(domain, 210.0e3)
 nu = fem.Constant(domain, 0.3)
-mu = E/(2*(1+nu))
-lmbda = E*nu/((1+nu)*(1-2*nu))
+mu = E / ( 2 * ( 1 + nu))
+lmbda = E * nu / ((1 + nu) * (1 - 2 * nu))
 n = fem.Constant(domain, 2.0)
 Kn = lmbda + 2 * mu / n
 
