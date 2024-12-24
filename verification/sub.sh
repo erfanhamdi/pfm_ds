@@ -17,4 +17,6 @@ echo "=========================================================="
 module load openmpi
 module load miniconda
 conda activate fenicsx-env
-mpirun -np $NSLOTS python3 2d_tension.py
+# mpirun -np $NSLOTS python3 2d_shear.py
+# mpirun -np $NSLOTS python3 <file name that user provides in command line>
+mpirun -np $NSLOTS python3 $1

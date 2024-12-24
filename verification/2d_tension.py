@@ -5,6 +5,7 @@ import ufl.constant
 
 from dolfinx import mesh, fem, plot, io, default_scalar_type
 from dolfinx.fem.petsc import assemble_matrix, assemble_vector, apply_lifting, set_bc, create_vector, create_matrix
+from dolfinx.io import gmshio
 from mpi4py import MPI
 from petsc4py import PETSc
 import pyvista as pv
@@ -18,8 +19,9 @@ from utils import plotter_func, plot_force_disp, distance_points_to_segment
 ksp = PETSc.KSP.Type.GMRES
 pc = PETSc.PC.Type.HYPRE
 
-mesh_size = 150
-out_file = f"./results/2d_tension"
+mesh_size = 200
+out_file = f"./results/2d_tension_regional_mesh"
+mesh_address = "/projectnb/lejlab2/erfan/dataset_phase2/Generalized/tension_mesh_no_notch.msh"
 Path(out_file).mkdir(parents=True, exist_ok=True)
 
 print(f"2D tension benchmark test, out_file = {out_file}")
@@ -30,7 +32,8 @@ results_folder.mkdir(exist_ok=True, parents=True)
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 
-domain = mesh.create_rectangle(MPI.COMM_WORLD, [np.array([-0.5, -0.5]), np.array([0.5, 0.5])], [mesh_size, mesh_size], cell_type=mesh.CellType.quadrilateral)
+# domain = mesh.create_rectangle(MPI.COMM_WORLD, [np.array([-0.5, -0.5]), np.array([0.5, 0.5])], [mesh_size, mesh_size], cell_type=mesh.CellType.quadrilateral)
+domain, _, _ = gmshio.read_from_msh(mesh_address, MPI.COMM_WORLD, gdim=2)
 
 G_c_ = fem.Constant(domain, 2.7)
 l_0_ = fem.Constant(domain, 4e-3)
