@@ -5,6 +5,7 @@ import ufl.constant
 
 from dolfinx import mesh, fem, plot, io, default_scalar_type
 from dolfinx.fem.petsc import assemble_matrix, assemble_vector, apply_lifting, set_bc, create_vector, create_matrix
+from dolfinx.io import gmshio
 from mpi4py import MPI
 from petsc4py import PETSc
 import pyvista as pv
@@ -18,12 +19,14 @@ import sys
 import argparse
 
 parser = argparse.ArgumentParser(description='2D shear benchmark test')
+parser.add_argument('--case', type=str, default="tension", help='Case to run')
 parser.add_argument('--model', type=str, default="miehe", help='Model to use')
 parser.add_argument('--mesh_size', type=int, default=250, help='Mesh size')
 parser.add_argument('--out_file', type=str, default="2d_shear", help='Output file')
 parser.add_argument('--job_id', type=int, default=0, help='Job id')
 args = parser.parse_args()
 
+sim_case = args.case
 model = args.model
 mesh_size = args.mesh_size
 out_file_arg = args.out_file
@@ -43,7 +46,15 @@ results_folder.mkdir(exist_ok=True, parents=True)
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 
-domain = mesh.create_rectangle(MPI.COMM_WORLD, [np.array([-0.5, -0.5]), np.array([0.5, 0.5])], [mesh_size, mesh_size], cell_type=mesh.CellType.quadrilateral)
+if sim_case == "tension":
+    mesh_address = "/projectnb/lejlab2/erfan/dataset_phase2/Generalized/tension_mesh_no_notch.msh"
+    domain, _, _ = gmshio.read_from_msh(mesh_address, MPI.COMM_WORLD, gdim=2)
+    delta_T1 = 1e-5
+    delta_T2 = 1e-6
+elif sim_case == "shear":
+    domain = mesh.create_rectangle(MPI.COMM_WORLD, [np.array([-0.5, -0.5]), np.array([0.5, 0.5])], [mesh_size, mesh_size], cell_type=mesh.CellType.quadrilateral)
+    delta_T1 = 1e-5
+    delta_T2 = 1e-5
 
 G_c_ = fem.Constant(domain, 2.7)
 l_0_ = fem.Constant(domain, 4e-3)
@@ -57,7 +68,6 @@ gamma_star = fem.Constant(domain, 5.0)
 
 num_steps = 2000
 t_ = 0
-delta_T1 = 1e-5
 
 V = fem.functionspace(domain, ("Lagrange", 1,))
 W = fem.functionspace(domain, ("Lagrange", 1, (domain.geometry.dim,)))
@@ -125,7 +135,11 @@ bc_bot_y = fem.dirichletbc(default_scalar_type(0.0), bot_y_dofs, W.sub(1))
 bc_bot_x = fem.dirichletbc(default_scalar_type(0.0), bot_x_dofs, W.sub(0))
 bc_top_y = fem.dirichletbc(default_scalar_type(0.0), top_y_dofs, W.sub(1))
 bc_top_x = fem.dirichletbc(u_bc_top, top_x_dofs, W.sub(0)) 
-bc = [bc_bot_y, bc_bot_x, bc_top_y, bc_top_x]
+if sim_case == "tension":
+    bc_top_y = fem.dirichletbc(u_bc_top, top_y_dofs, W.sub(1))
+    bc = [bc_bot_y, bc_bot_x, bc_top_y]
+else:
+    bc = [bc_bot_y, bc_bot_x, bc_top_y, bc_top_x]
 
 ds = ufl.Measure("ds", domain=domain, subdomain_data=facet_tag)
 dx = ufl.Measure("dx", domain=domain, metadata={"quadrature_degree": 2})
@@ -251,12 +265,17 @@ def one(x):
     values[0] = 1.0
     return values
 
-u_bc_bot.sub(0).interpolate(one)
+if sim_case == "tension":
+    u_bc_bot.sub(1).interpolate(one)
+else:
+    u_bc_bot.sub(0).interpolate(one)
 
 ################################# main simulation loop ###############################################
 delta_T = delta_T1
 for i in range(num_steps+1):
     print(f"Step {i}/{num_steps}")
+    if i > 500:
+        delta_T = delta_T2
     t_ += delta_T
     u_bc_top.value = t_
     error_total = 1
@@ -319,4 +338,4 @@ for i in range(num_steps+1):
 
         plotter_func(p_new, dim=1, mesh = domain, title=f"{out_file}/p_mpi_{i}")
         if rank == 0:
-            plot_force_disp(B_bot, "bot_x", out_file)
+            plot_force_disp(B_bot, "bot_rxn", out_file)
