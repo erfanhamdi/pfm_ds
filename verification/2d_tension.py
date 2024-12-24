@@ -18,9 +18,8 @@ from utils import plotter_func, plot_force_disp, distance_points_to_segment
 ksp = PETSc.KSP.Type.GMRES
 pc = PETSc.PC.Type.HYPRE
 
-mesh_size = 256
-model_type = "amor"
-out_file = f"./results/2d_tension_{model_type}"
+mesh_size = 150
+out_file = f"./results/2d_tension"
 Path(out_file).mkdir(parents=True, exist_ok=True)
 
 print(f"2D tension benchmark test, out_file = {out_file}")
@@ -34,13 +33,11 @@ rank = comm.Get_rank()
 domain = mesh.create_rectangle(MPI.COMM_WORLD, [np.array([-0.5, -0.5]), np.array([0.5, 0.5])], [mesh_size, mesh_size], cell_type=mesh.CellType.quadrilateral)
 
 G_c_ = fem.Constant(domain, 2.7)
-l_0_ = fem.Constant(domain, 0.015)
+l_0_ = fem.Constant(domain, 4e-3)
 E = fem.Constant(domain, 210.0e3)
 nu = fem.Constant(domain, 0.3)
-mu = E / ( 2 * ( 1 + nu))
-lmbda = E * nu / ((1 + nu) * (1 - 2 * nu))
-n = fem.Constant(domain, 2.0)
-Kn = lmbda + 2 * mu / n
+mu = E/(2*(1+nu))
+lmbda = E*nu/((1+nu)*(1-2*nu))
 
 V = fem.functionspace(domain, ("Lagrange", 1,))
 W = fem.functionspace(domain, ("Lagrange", 1, (domain.geometry.dim,)))
@@ -106,8 +103,8 @@ u_bc_right = fem.Constant(domain, default_scalar_type(0.0))
 
 bc_bot_y = fem.dirichletbc(default_scalar_type(0.0), bot_y_dofs, W.sub(1))
 bc_bot_x = fem.dirichletbc(default_scalar_type(0.0), bot_x_dofs, W.sub(0))
-bc_top_y = fem.dirichletbc(u_bc_top, top_y_dofs, W.sub(1))
-bc = [bc_bot_y, bc_top_y,]
+bc_top_y = fem.dirichletbc(u_bc_top, top_y_dofs, W.sub(1)) 
+bc = [bc_bot_y, bc_bot_x, bc_top_y]
 
 ds = ufl.Measure("ds", domain=domain, subdomain_data=facet_tag)
 dx = ufl.Measure("dx", domain=domain, metadata={"quadrature_degree": 2})
@@ -140,20 +137,8 @@ def psi_pos_m(u):
 def psi_neg_m(u):
     return 0.5*lmbda*(bracket_neg(ufl.tr(epsilon(u)))**2) + mu*(ufl.inner(epsilon_n, epsilon_n))
 
-def strain_dev(u):
-    return epsilon(u) - (1/3) * ufl.tr(epsilon(u)) * ufl.Identity(2)
-
-def psi_pos_a(u):
-    return 0.5 * Kn * bracket_pos(ufl.tr(epsilon(u)))**2 + mu * ufl.inner(strain_dev(u), strain_dev(u))
-
-def psi_neg_a(u):
-    return 0.5 * Kn * bracket_neg(ufl.tr(epsilon(u)))**2
-
-def H(u_new, H_old, model_type = "miehe"):
-    if model_type == "miehe":
-        return ufl.conditional(ufl.gt(psi_pos_m(u_new), H_old), psi_pos_m(u_new), H_old)
-    elif model_type == "amor":
-        return ufl.conditional(ufl.gt(psi_pos_a(u_new), H_old), psi_pos_a(u_new), H_old)
+def H(u_new, H_old):
+    return ufl.conditional(ufl.gt(psi_pos_m(u_new), H_old), psi_pos_m(u_new), H_old)
 
 def H_init(dist_list, l_0, G_c):
     distances = np.array(dist_list)
@@ -210,6 +195,9 @@ du = ufl.TrialFunction(W)
 u_l2_error = fem.form(ufl.dot(u_new - u_old, u_new - u_old)*dx)
 p_l2_error = fem.form(ufl.dot(p_new - p_old, p_new - p_old)*dx)
 
+R_bot_form_y = fem.form(((1.0-p_new)**2)*sigma(u_new)[1, 1] * ds(2))
+R_bot_form_x = fem.form(((1.0-p_new)**2)*sigma(u_new)[1, 0] * ds(2))
+
 ############################ new rxn force calculation ###############################################
 residual = ufl.action(ufl.lhs(E_du), u_new) - ufl.rhs(E_du)
 
@@ -233,7 +221,7 @@ u_bc_bot.sub(1).interpolate(one)
 delta_T = delta_T1
 for i in range(num_steps+1):
     print(f"Step {i}/{num_steps}")
-    if num_steps > 500:
+    if i > 500:
         delta_T = delta_T2
     t_ += delta_T
     u_bc_top.value = t_
@@ -298,4 +286,4 @@ for i in range(num_steps+1):
 
         plotter_func(p_new, dim=1, mesh = domain, title=f"{out_file}/p_mpi_{i}")
         if rank == 0:
-            plot_force_disp(B_bot, "bot_y", out_file)
+            plot_force_disp(B_bot, "bot_x", out_file)
