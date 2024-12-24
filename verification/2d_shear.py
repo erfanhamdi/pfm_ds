@@ -14,12 +14,28 @@ import os
 import time
 
 from utils import plotter_func, plot_force_disp, distance_points_to_segment
+# get input from command line
+import sys
+import argparse
+
+parser = argparse.ArgumentParser(description='2D shear benchmark test')
+parser.add_argument('--model', type=str, default="miehe", help='Model to use')
+parser.add_argument('--mesh_size', type=int, default=250, help='Mesh size')
+parser.add_argument('--out_file', type=str, default="2d_shear", help='Output file')
+parser.add_argument('--job_id', type=int, default=0, help='Job id')
+
+args = parser.parse_args()
+
+model = args.model
+mesh_size = args.mesh_size
+out_file_arg = args.out_file
+job_id = args.job_id
 
 ksp = PETSc.KSP.Type.GMRES
 pc = PETSc.PC.Type.HYPRE
 
-mesh_size = 250
-out_file = f"./results/2d_shear_amor"
+# mesh_size = 250
+out_file = f"./results/{out_file_arg}_{job_id}"
 Path(out_file).mkdir(parents=True, exist_ok=True)
 
 print(f"2D shear benchmark test, out_file = {out_file}")
@@ -40,6 +56,7 @@ mu = E/(2*(1+nu))
 lmbda = E*nu/((1+nu)*(1-2*nu))
 n = fem.Constant(domain, 3.0)
 Kn = lmbda + 2 * mu / n
+gamma_star = fem.Constant(domain, 5.0)
 
 V = fem.functionspace(domain, ("Lagrange", 1,))
 W = fem.functionspace(domain, ("Lagrange", 1, (domain.geometry.dim,)))
@@ -148,9 +165,26 @@ def psi_pos_a(u):
 
 def psi_neg_a(u):
     return 0.5 * Kn * bracket_neg(ufl.tr(epsilon(u)))**2
+    
+def psi_pos_s(u):
+    return mu * ufl.inner(strain_dev(u), strain_dev(u)) + 0.5 * Kn * (bracket_pos(ufl.tr(epsilon(u)))**2 - gamma_star * bracket_neg(ufl.tr(epsilon(u)))**2)
+
+def psi_neg_s(u):
+    return (1 + gamma_star) * 0.5 * Kn * bracket_neg(ufl.tr(epsilon(u)))**2
+
+
+if model == "miehe":
+    psi_pos = psi_pos_m(u_new)
+    psi_neg = psi_neg_m(u_new)
+elif model == "amor":
+    psi_pos = psi_pos_a(u_new)
+    psi_neg = psi_neg_a(u_new)
+elif model == "star":
+    psi_pos = psi_pos_s(u_new)
+    psi_neg = psi_neg_s(u_new)
 
 def H(u_new, H_old):
-    return ufl.conditional(ufl.gt(psi_pos_a(u_new), H_old), psi_pos_a(u_new), H_old)
+    return ufl.conditional(ufl.gt(psi_pos, H_old), psi_pos, H_old)
 
 def H_init(dist_list, l_0, G_c):
     distances = np.array(dist_list)
