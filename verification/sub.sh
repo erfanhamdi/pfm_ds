@@ -23,5 +23,5 @@ echo "python file: $1"
 echo "model: $2"
 echo "mesh size: $3"
 echo "out file: $4"
-mpirun -np $NSLOTS python3 $1 --model $2 --mesh_size $3 --out_file $4 --job_id $JOB_ID
+mpirun -np $NSLOTS python3 $1 --case $2 --model $3 --mesh_size $4 --out_file $5 --job_id $JOB_ID
 
