@@ -14,7 +14,6 @@ import os
 import time
 
 from utils import plotter_func, plot_force_disp, distance_points_to_segment
-# get input from command line
 import sys
 import argparse
 
@@ -23,7 +22,6 @@ parser.add_argument('--model', type=str, default="miehe", help='Model to use')
 parser.add_argument('--mesh_size', type=int, default=250, help='Mesh size')
 parser.add_argument('--out_file', type=str, default="2d_shear", help='Output file')
 parser.add_argument('--job_id', type=int, default=0, help='Job id')
-
 args = parser.parse_args()
 
 model = args.model
@@ -34,7 +32,6 @@ job_id = args.job_id
 ksp = PETSc.KSP.Type.GMRES
 pc = PETSc.PC.Type.HYPRE
 
-# mesh_size = 250
 out_file = f"./results/{out_file_arg}_{job_id}"
 Path(out_file).mkdir(parents=True, exist_ok=True)
 
@@ -57,6 +54,10 @@ lmbda = E*nu/((1+nu)*(1-2*nu))
 n = fem.Constant(domain, 3.0)
 Kn = lmbda + 2 * mu / n
 gamma_star = fem.Constant(domain, 5.0)
+
+num_steps = 2000
+t_ = 0
+delta_T1 = 1e-5
 
 V = fem.functionspace(domain, ("Lagrange", 1,))
 W = fem.functionspace(domain, ("Lagrange", 1, (domain.geometry.dim,)))
@@ -140,7 +141,7 @@ def bracket_pos(u):
 
 def bracket_neg(u):
     return 0.5*(u - np.abs(u))
-##################################################################
+
 A = ufl.variable(epsilon(u_new))
 I1 = ufl.tr(A)
 delta = (A[0, 0] - A[1, 1])**2 + 4 * A[0, 1] * A[1, 0] + 3.0e-16 ** 2
@@ -165,13 +166,12 @@ def psi_pos_a(u):
 
 def psi_neg_a(u):
     return 0.5 * Kn * bracket_neg(ufl.tr(epsilon(u)))**2
-    
+
 def psi_pos_s(u):
     return mu * ufl.inner(strain_dev(u), strain_dev(u)) + 0.5 * Kn * (bracket_pos(ufl.tr(epsilon(u)))**2 - gamma_star * bracket_neg(ufl.tr(epsilon(u)))**2)
 
 def psi_neg_s(u):
     return (1 + gamma_star) * 0.5 * Kn * bracket_neg(ufl.tr(epsilon(u)))**2
-
 
 if model == "miehe":
     psi_pos = psi_pos_m(u_new)
@@ -186,6 +186,7 @@ elif model == "star":
 def H(u_new, H_old):
     return ufl.conditional(ufl.gt(psi_pos, H_old), psi_pos, H_old)
 
+############################################# defining the initial cracks ########################################
 def H_init(dist_list, l_0, G_c):
     distances = np.array(dist_list)
     distances = np.min(distances, axis=0)
@@ -207,6 +208,7 @@ for idx in range(len(A_)):
 H_init_.x.array[:] = H_init(dist_list, l_0_, G_c_)
 H_old.interpolate(H_init_)
 
+#################################### problem definition ############################################
 T = fem.Constant(domain, default_scalar_type((0, 0)))
 E_du = ((1.0-p_new)**2)*ufl.inner(ufl.grad(v),sigma(u))*dx + ufl.dot(T, v) * ds
 a_u = fem.form(ufl.lhs(E_du))
@@ -230,29 +232,18 @@ solver_phi.setOperators(A_phi)
 solver_phi.setType(ksp)
 solver_phi.getPC().setType(pc)
 
-num_steps = 2000
-t_ = 0
-delta_T1 = 1e-5
-
-B_bot = []
-
-du = ufl.TrialFunction(W)
 u_l2_error = fem.form(ufl.dot(u_new - u_old, u_new - u_old)*dx)
 p_l2_error = fem.form(ufl.dot(p_new - p_old, p_new - p_old)*dx)
 
-R_bot_form_y = fem.form(((1.0-p_new)**2)*sigma(u_new)[1, 1] * ds(2))
-R_bot_form_x = fem.form(((1.0-p_new)**2)*sigma(u_new)[1, 0] * ds(2))
-
 ############################ new rxn force calculation ###############################################
+B_bot = []
 residual = ufl.action(ufl.lhs(E_du), u_new) - ufl.rhs(E_du)
-
 v_reac = fem.Function(W)
 virtual_work_form = fem.form(ufl.action(residual, v_reac))
 
 bot_dofs = fem.locate_dofs_geometrical(W, bottom_boundary)
 u_bc_bot = fem.Function(W)
 bc_bot_rxn = fem.dirichletbc(u_bc_bot, bot_dofs)
-
 bc_rxn = [bc_bot_rxn]
 
 def one(x):
@@ -262,7 +253,7 @@ def one(x):
 
 u_bc_bot.sub(0).interpolate(one)
 
-############################ new rxn force calculation ###############################################
+################################# main simulation loop ###############################################
 delta_T = delta_T1
 for i in range(num_steps+1):
     print(f"Step {i}/{num_steps}")
@@ -271,7 +262,6 @@ for i in range(num_steps+1):
     error_total = 1
     error_tol = 1e-5
     flag = 1
-    print(f"rank {rank}: t_ = {t_}")
     staggered_iter = 0
     while flag:
         staggered_iter +=1
